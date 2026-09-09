@@ -5,10 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000
 
-# Install system dependencies for OpenCV, Pillow, ReportLab, and PostgreSQL
+# Install system dependencies for headless OpenCV, Pillow, ReportLab, and PostgreSQL
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libgomp1 \
     libpq-dev \
