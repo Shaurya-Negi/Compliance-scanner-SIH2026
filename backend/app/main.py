@@ -2,6 +2,7 @@
 SIH26034 AI Packaged Commodity Compliance Scanner
 FastAPI application entry point with all routers integrated
 """
+import os
 import hashlib
 
 # Compatibility fix for Python 3.8 on Windows with ReportLab / hashlib openssl_md5
@@ -60,7 +61,6 @@ async def startup_event():
 
 
 # Create upload and report directories before mounting static files
-import os
 Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 Path(settings.REPORT_DIR).mkdir(parents=True, exist_ok=True)
 samples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples")

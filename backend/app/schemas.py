@@ -141,6 +141,8 @@ class ExtractedEntities(BaseModel):
     raw_text: Optional[str] = Field(None, description="Complete raw OCR text")
     image_urls: Optional[List[str]] = Field(None, description="List of all multi-surface packaging image URLs")
 
+    model_config = {"extra": "ignore"}
+
 
 # ---------------- Validation / Rule Check Schemas ----------------
 
@@ -196,8 +198,7 @@ class ScanResponse(BaseModel):
     report_url: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"extra": "ignore", "from_attributes": True}
 
 
 class ScanSummary(BaseModel):

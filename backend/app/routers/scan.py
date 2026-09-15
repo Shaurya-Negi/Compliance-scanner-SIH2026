@@ -206,7 +206,12 @@ def _execute_scan_pipeline(
 
         # Merge verified GS1 barcode & brand identity into extracted entities ONLY for identity fields if missing
         if product_identity:
-            if not entities.get("product_name") or entities.get("product_name") in ["Packaged Commodity", "PRODUCT NAME", "COMMODITY"]:
+            curr_pname = str(entities.get("product_name") or "")
+            if (not entities.get("product_name")
+                or curr_pname in ["Packaged Commodity", "PRODUCT NAME", "COMMODITY"]
+                or "SURFACE" in curr_pname.upper()
+                or "PHOTO" in curr_pname.upper()
+                or "---" in curr_pname):
                 entities["product_name"] = product_identity.get("product_name")
             if not entities.get("brand"):
                 entities["brand"] = product_identity.get("brand")

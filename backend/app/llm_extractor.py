@@ -215,9 +215,12 @@ class LLMExtractor:
         if pname_match:
             entities["product_name"] = pname_match.group(1).strip()
         else:
-            first_line = raw_text.splitlines()[0] if raw_text.splitlines() else ""
-            if len(first_line) > 3 and not re.search(r'NET|MRP|BATCH|EXP|USE|PACKED', first_line, re.I):
-                entities["product_name"] = first_line.strip()
+            for line in raw_text.splitlines():
+                clean_l = line.strip()
+                if (clean_l and len(clean_l) > 3
+                    and not re.search(r'SURFACE|PHOTO|---|===|NET|MRP|BATCH|EXP|USE|PACKED|PKD|MFG|DATE|PRICE|RS\.|₹|BARCODE', clean_l, re.I)):
+                    entities["product_name"] = clean_l
+                    break
 
         # 8. Manufacturer Address & PIN
         mfg_addr_match = re.search(r'(?:MANUFACTURER\s*(?:&|\s*AND\s*)?\s*PACKER|MANUFACTURED\s+BY|PACKED\s+BY|MANUFACTURER)[:\s]+([^\n\r]+)', raw_text, re.IGNORECASE)
