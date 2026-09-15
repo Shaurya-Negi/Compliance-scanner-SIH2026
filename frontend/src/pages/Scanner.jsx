@@ -74,9 +74,7 @@ export default function Scanner() {
     formData.append('image', file);
 
     try {
-      const res = await api.post('/api/v1/scan/decode-barcode-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await api.post('/api/v1/scan/decode-barcode-image', formData);
 
       if (res.data && res.data.success && res.data.product) {
         setLockedProduct(res.data.product);
@@ -88,9 +86,9 @@ export default function Scanner() {
       }
     } catch (err) {
       console.error('Barcode decoding error:', err);
-      setError(
-        err.response?.data?.detail || 'Failed to decode barcode from image. Please try again or enter the barcode number.'
-      );
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : (err.message || 'Failed to decode barcode from image. Please try again or enter the barcode number.'));
+      setError(errorMsg);
     } finally {
       setIsDecodingBarcode(false);
     }
@@ -220,18 +218,16 @@ export default function Scanner() {
     }
 
     try {
-      const response = await api.post('/api/v1/scan', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await api.post('/api/v1/scan', formData);
 
       if (response.data && response.data.scan_id) {
         navigate(`/result/${response.data.scan_id}`);
       }
     } catch (err) {
       console.error('Scan error:', err);
-      setError(
-        err.response?.data?.detail || 'Scan processing failed. Please ensure the backend is running and try again.'
-      );
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : (err.message || 'Scan processing failed. Please ensure the backend is running and try again.'));
+      setError(errorMsg);
     } finally {
       clearInterval(animInterval);
       setIsScanning(false);
