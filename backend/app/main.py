@@ -33,11 +33,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # Permits all Vercel production & preview deployments
+    allow_origin_regex=r"^https?://.*$",  # Permits all localhost, IP, Vercel, and Render deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"]
+    expose_headers=["*"]
 )
 
 # Create upload and report directories on startup

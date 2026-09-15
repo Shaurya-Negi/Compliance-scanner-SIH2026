@@ -117,9 +117,9 @@ export default function Scanner() {
       }
     } catch (err) {
       console.error('Barcode lookup error:', err);
-      setError(
-        err.response?.data?.detail || `Failed to resolve barcode "${code}".`
-      );
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : (err.message === 'Network Error' ? 'Cannot connect to backend server. Please ensure the backend is running (or wait a few seconds if Render is waking up).' : (err.message || `Failed to resolve barcode "${code}".`)));
+      setError(errorMsg);
     } finally {
       setIsDecodingBarcode(false);
     }
@@ -226,7 +226,7 @@ export default function Scanner() {
     } catch (err) {
       console.error('Scan error:', err);
       const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : (err.message || 'Scan processing failed. Please ensure the backend is running and try again.'));
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : (err.message === 'Network Error' ? 'Network Error: Cannot connect to the compliance backend. Please verify backend is running.' : (err.message || 'Scan processing failed. Please ensure the backend is running and try again.')));
       setError(errorMsg);
     } finally {
       clearInterval(animInterval);
@@ -247,9 +247,9 @@ export default function Scanner() {
       }
     } catch (err) {
       console.error('Sample test error:', err);
-      setError(
-        err.response?.data?.detail || 'Failed to process sample package test.'
-      );
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : (err.message === 'Network Error' ? 'Network Error: Backend unreachable. Please verify server status.' : (err.message || 'Failed to process sample package test.')));
+      setError(errorMsg);
     } finally {
       clearInterval(animInterval);
       setIsScanning(false);

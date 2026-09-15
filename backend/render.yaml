@@ -28,7 +28,7 @@ services:
       - key: GROQ_MODEL
         value: qwen/qwen3.8-27b
       - key: CORS_ORIGINS
-        value: "https://sih2026-scanner.vercel.app,http://localhost:5173"
+        value: "https://sih2026-scanner.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:8000"
 
 databases:
   # Managed PostgreSQL Free Tier
