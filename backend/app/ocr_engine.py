@@ -197,7 +197,14 @@ class OCREngine:
         if ocr_lines:
             raw_lines = ocr_lines
         else:
-            raw_lines = []
+            # Fallback: use barcode-resolved product declaration lines from vision engine
+            # when deep OCR libraries are unavailable or produced no output
+            vision_lines = vision_res.get("lines", [])
+            if vision_lines:
+                raw_lines = vision_lines
+                logger.info(f"OCR engines produced no text; using {len(vision_lines)} barcode-resolved declaration lines from vision engine")
+            else:
+                raw_lines = []
 
         # Ensure default font heights if none measured
         if not font_heights:
