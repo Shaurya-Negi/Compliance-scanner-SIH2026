@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
 
     # File Storage
-    UPLOAD_DIR: str = "uploads"
-    REPORT_DIR: str = "reports"
+    UPLOAD_DIR: str = str(_BASE_DIR / "uploads")
+    REPORT_DIR: str = str(_BASE_DIR / "reports")
     MAX_UPLOAD_SIZE_MB: int = 10
 
     @property
@@ -44,7 +44,14 @@ class Settings(BaseSettings):
         if isinstance(self.CORS_ORIGINS, str):
             origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
             # Ensure local dev origins are always included
-            for default_origin in ["http://localhost:5173", "http://localhost:3000"]:
+            for default_origin in [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:8000",
+                "http://127.0.0.1:8000"
+            ]:
                 if default_origin not in origins:
                     origins.append(default_origin)
             return origins

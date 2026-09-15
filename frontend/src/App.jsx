@@ -5,6 +5,7 @@ import Scanner from './pages/Scanner';
 import Result from './pages/Result';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
+import BarcodeLookup from './pages/BarcodeLookup';
 
 // Protected route wrapper for Inspector dashboard
 function ProtectedRoute({ children }) {
@@ -23,6 +24,8 @@ export default function App() {
         <main className="flex-grow">
           <Routes>
             <Route path="/" element={<Scanner />} />
+            <Route path="/barcode" element={<BarcodeLookup />} />
+            <Route path="/barcode/:barcode" element={<BarcodeLookup />} />
             <Route path="/result/:scanId" element={<Result />} />
             <Route
               path="/dashboard"

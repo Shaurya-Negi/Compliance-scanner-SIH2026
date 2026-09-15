@@ -247,6 +247,17 @@ class ComplianceEngine:
         address = entities.get("manufacturer_address")
         pin = entities.get("manufacturer_pin")
 
+        # Auto-extract PIN if present in address or raw text but unassigned
+        if not pin:
+            if address:
+                pin_m = re.search(r'\b([1-9][0-9]{5})\b', str(address))
+                if pin_m:
+                    pin = pin_m.group(1)
+            if not pin and entities.get("raw_text"):
+                pin_m = re.search(r'\b([1-9][0-9]{5})\b', str(entities["raw_text"]))
+                if pin_m:
+                    pin = pin_m.group(1)
+
         if not address or len(address.strip()) < 15:
             return {
                 "rule_code": "RULE_5_ADDRESS",

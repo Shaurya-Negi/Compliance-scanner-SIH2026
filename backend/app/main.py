@@ -49,20 +49,27 @@ async def startup_event():
     # Create directories for file storage
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Path(settings.REPORT_DIR).mkdir(parents=True, exist_ok=True)
+    samples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples")
+    Path(samples_dir).mkdir(parents=True, exist_ok=True)
 
     print(f"✅ Database initialized")
     print(f"✅ Upload directory: {settings.UPLOAD_DIR}")
     print(f"✅ Report directory: {settings.REPORT_DIR}")
+    print(f"✅ Samples directory: {samples_dir}")
     print(f"🚀 API running on {settings.HOST}:{settings.PORT}")
 
 
 # Create upload and report directories before mounting static files
+import os
 Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 Path(settings.REPORT_DIR).mkdir(parents=True, exist_ok=True)
+samples_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples")
+Path(samples_dir).mkdir(parents=True, exist_ok=True)
 
-# Mount static file directories for uploads and generated reports
+# Mount static file directories for uploads, generated reports, and sample packaging packs
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 app.mount("/reports", StaticFiles(directory=settings.REPORT_DIR), name="reports")
+app.mount("/samples", StaticFiles(directory=samples_dir), name="samples")
 
 
 # Root health check endpoint
@@ -86,6 +93,43 @@ async def health_check():
         "status": "healthy",
         "database": "connected",
         "ai_model": settings.GROQ_MODEL
+    }
+
+
+# Direct Browser Barcode Lookup Shortcut Route
+@app.get("/barcode/{barcode}")
+async def direct_browser_barcode_lookup(barcode: str):
+    """
+    Direct Browser URL Barcode Intelligence Endpoint.
+    Visit http://localhost:8000/barcode/{barcode_number} in any browser to get
+    instant product details (Name, Quantity, MRP, Manufacturer, Customer Care, Expiry, etc.).
+    """
+    from app.fmcg_database import lookup_barcode, enrich_product_metadata
+    from fastapi import HTTPException, status
+
+    clean_code = barcode.strip().replace("-", "").replace(" ", "")
+    product_data = lookup_barcode(clean_code)
+
+    if not product_data or "Generic" in product_data.get("product_name", ""):
+        from app.barcode_scanner import barcode_engine
+        online_data = barcode_engine.query_online_openfoodfacts(clean_code)
+        if online_data:
+            product_data = enrich_product_metadata(online_data, clean_code)
+
+    if not product_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "Barcode Not Found",
+                "barcode": clean_code,
+                "message": f"Barcode '{clean_code}' is not registered in the GS1 India FMCG catalog or OpenFoodFacts."
+            }
+        )
+
+    return {
+        "success": True,
+        "barcode": clean_code,
+        "product": product_data
     }
 
 

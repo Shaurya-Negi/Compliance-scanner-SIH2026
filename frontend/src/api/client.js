@@ -5,7 +5,7 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
-  timeout: 30000, // 30s timeout for OCR + LLM pipeline
+  timeout: 120000, // 120s extended timeout for multi-surface OCR + LLM compliance pipeline
 });
 
 // Request interceptor to attach JWT token

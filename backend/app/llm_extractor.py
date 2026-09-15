@@ -1,9 +1,10 @@
 """
-LLM-powered entity extraction from OCR text using Groq API (LLaMA 3.1 70B)
+LLM-powered entity extraction from OCR text using Groq API
 Extracts 9 mandatory declarations under Legal Metrology (Packaged Commodities) Rules, 2011
 """
 import json
 import logging
+import re
 from typing import Dict, Optional, Any
 from groq import Groq
 from app.config import settings
@@ -12,31 +13,28 @@ logger = logging.getLogger(__name__)
 
 
 # Structured extraction prompt for Legal Metrology compliance
-EXTRACTION_PROMPT_TEMPLATE = """You are a Legal Metrology compliance AI assistant. Your task is to extract the 9 MANDATORY declarations from packaged commodity labels as per Legal Metrology (Packaged Commodities) Rules, 2011, Rule 6.
+EXTRACTION_PROMPT_TEMPLATE = """You are a Legal Metrology compliance AI expert for Indian FMCG Packaged Commodities (Rules, 2011).
+Your task is to accurately extract the mandatory declarations from packaging label OCR text.
 
-**Extract the following fields from the OCR text below:**
+**Extract the following fields from the OCR text:**
+1. **product_name** - Generic/common name of commodity (e.g., "Cake", "Biscuits", "Soap", "Atta", "Detergent", "Sugar"). If ingredients are shown, identify the main product/commodity.
+2. **net_quantity** - Net weight or volume with unit (e.g., "400g", "500 g", "1 kg", "250 ml"). Look for "NET WT", "NET QUANTITY", "NET QTY".
+3. **mrp** - Maximum Retail Price (e.g., "₹125.00", "Rs. 125", "125.00").
+4. **mrp_taxes_inclusive** - Boolean (true/false): Does the label indicate taxes are included (e.g. "inclusive of all taxes", "incl. of all taxes", "(incl.", or OCR variations like "(hc cslaes", "incl taxes")?
+5. **mfg_date** - Date of manufacture or packing in DD/MM/YYYY or MM/YYYY format (e.g., convert "02 May 2026" -> "02/05/2026"). Look for "PACKED ON", "PKD", "MFG", "MANUFACTURED".
+6. **manufacturer_address** - Full manufacturer/packer address with city and state.
+7. **manufacturer_pin** - 6-digit Indian postal PIN code extracted from address.
+8. **customer_care_phone** - Customer helpline or toll-free phone number (e.g. 1800-XXX-XXXX or 10-digit).
+9. **customer_care_email** - Customer support email address.
+10. **country_of_origin** - Country where produced/packed (e.g. "India").
+11. **unit_sale_price** - Price per unit weight/measure (e.g., "₹0.31 per gm", "0.31 Per gm", "₹1.50 per 10g"). Look for "UNIT SALE PRICE", "INTSALEPRICE", "USP".
+12. **expiry_date** - Expiry date or Best Before (e.g., convert "03 October 2026" -> "03/10/2026"). Look for "USE BY", "BEST BEFORE", "EXP".
 
-1. **product_name** - Common or generic name of the commodity (NOT brand name)
-2. **net_quantity** - Net quantity with unit (e.g., "500 g", "1 L", "250 ml")
-3. **mrp** - Maximum Retail Price in rupees (e.g., "₹50.00", "Rs. 145")
-4. **mrp_taxes_inclusive** - Boolean: Does the label explicitly say "inclusive of all taxes" or similar phrase near MRP?
-5. **mfg_date** - Manufacturing or packing date (format: MM/YYYY or DD/MM/YYYY)
-6. **manufacturer_address** - Complete address of manufacturer/packer with locality and state
-7. **manufacturer_pin** - 6-digit PIN code extracted from the address
-8. **customer_care_phone** - Customer care phone number (10-digit or toll-free)
-9. **customer_care_email** - Customer care email address
-10. **country_of_origin** - Country where the product was manufactured (e.g., "India", "China", "USA")
-11. **unit_sale_price** - Price per unit (e.g., "₹0.10 per gram", "₹1.45 per 10ml")
-12. **expiry_date** - Best before / use by / expiry date (format: MM/YYYY or DD/MM/YYYY)
-
-**IMPORTANT RULES:**
-- Return ONLY valid JSON with these exact keys
-- Use `null` for any field not found in the text
-- For boolean `mrp_taxes_inclusive`, return `true` only if the phrase "inclusive of all taxes" or equivalent is present
-- Extract dates in the format found (preserve MM/YYYY or DD/MM/YYYY)
-- Extract complete address including PIN code
-- Do NOT infer or fabricate information not present in the text
-- If multiple values exist for a field, extract the most prominent one
+**CRITICAL RULES:**
+- Return ONLY a valid JSON object with these exact 12 keys.
+- If a field is not present in the text, set its value to null.
+- Handle noisy OCR text, missing colons, line breaks, or OCR artifacts gracefully.
+- Do NOT hallucinate data that is completely absent.
 
 **OCR Text:**
 {raw_ocr_text}
@@ -63,7 +61,7 @@ class LLMExtractor:
                 logger.info("No valid Groq API key configured. Using regex-based fallback extractor.")
                 self.client = None
                 return
-            self.client = Groq(api_key=self.api_key, timeout=5.0, max_retries=0)
+            self.client = Groq(api_key=self.api_key, timeout=6.0, max_retries=1)
             logger.info(f"Groq client initialized with model: {self.model}")
         except Exception as e:
             logger.error(f"Failed to initialize Groq client: {e}")
@@ -71,62 +69,45 @@ class LLMExtractor:
 
     def extract_entities(self, raw_ocr_text: str) -> Dict[str, Any]:
         """
-        Extract structured entities from OCR text using Groq LLM
-
-        Args:
-            raw_ocr_text: Raw text extracted from packaging label via OCR
-
-        Returns:
-            Dict with 12 extracted fields (9 mandatory + 3 derived)
-
-        Raises:
-            Exception: If API call fails or response is invalid
+        Extract structured entities from OCR text using Groq LLM with fallback
         """
-        if not self.client:
-            logger.warning("Groq client not available. Using fallback extraction.")
-            return self._fallback_extraction(raw_ocr_text)
-
-        if not raw_ocr_text or len(raw_ocr_text.strip()) < 10:
+        if not raw_ocr_text or len(raw_ocr_text.strip()) < 5:
             logger.warning("OCR text too short for extraction")
             return self._empty_entities()
 
+        if not self.client:
+            logger.warning("Groq client not available. Using regex fallback extraction.")
+            return self._fallback_extraction(raw_ocr_text)
+
         try:
-            # Build prompt
             prompt = EXTRACTION_PROMPT_TEMPLATE.format(raw_ocr_text=raw_ocr_text)
 
-            # Call Groq API with JSON mode
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a Legal Metrology compliance expert. Extract packaging label information accurately and return ONLY valid JSON."
+                        "content": "You are a Legal Metrology compliance AI expert. Extract packaging label information accurately and return ONLY valid JSON."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0.1,  # Low temperature for factual extraction
-                max_tokens=1024,
+                temperature=0.1,
+                max_tokens=600,
                 response_format={"type": "json_object"}
             )
 
-            # Parse response
             content = response.choices[0].message.content
             entities = json.loads(content)
-
-            # Validate and fill missing keys
             entities = self._validate_entities(entities, raw_ocr_text)
 
-            logger.info(f"Successfully extracted {sum(1 for v in entities.values() if v)} entities")
+            logger.info(f"Successfully extracted entities: {sum(1 for v in entities.values() if v)} fields populated")
             return entities
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from LLM: {e}")
-            return self._fallback_extraction(raw_ocr_text)
         except Exception as e:
-            logger.error(f"LLM extraction failed: {e}")
+            logger.warning(f"Groq LLM extraction error: {e}. Switching to Regex Fallback.")
             return self._fallback_extraction(raw_ocr_text)
 
     def _validate_entities(self, entities: Dict[str, Any], raw_text: str) -> Dict[str, Any]:
@@ -140,11 +121,30 @@ class LLMExtractor:
 
         validated = {}
         for key in required_keys:
-            validated[key] = entities.get(key)
+            val = entities.get(key)
+            if val is not None and str(val).lower() in ["null", "none", "n/a", ""]:
+                val = None
+            validated[key] = val
 
-        # Add raw text for reference
-        validated["raw_text"] = raw_text[:2000]  # First 2000 chars
+        # Secondary normalization for Indian currency
+        if validated.get("mrp") and not str(validated["mrp"]).startswith("₹") and not str(validated["mrp"]).startswith("Rs"):
+            # Format clean MRP
+            m_clean = re.sub(r'[^\d.]', '', str(validated["mrp"]))
+            if m_clean:
+                validated["mrp"] = f"₹{m_clean}"
 
+        # Ensure PIN code extraction from manufacturer address or raw text
+        if not validated.get("manufacturer_pin"):
+            if validated.get("manufacturer_address"):
+                pin_m = re.search(r'\b([1-9][0-9]{5})\b', str(validated["manufacturer_address"]))
+                if pin_m:
+                    validated["manufacturer_pin"] = pin_m.group(1)
+            if not validated.get("manufacturer_pin"):
+                pin_m = re.search(r'\b([1-9][0-9]{5})\b', raw_text)
+                if pin_m:
+                    validated["manufacturer_pin"] = pin_m.group(1)
+
+        validated["raw_text"] = raw_text[:2500]
         return validated
 
     def _empty_entities(self) -> Dict[str, Any]:
@@ -167,59 +167,84 @@ class LLMExtractor:
 
     def _fallback_extraction(self, raw_text: str) -> Dict[str, Any]:
         """
-        Simple regex-based fallback extraction for demo/testing
-        Used when Groq API is unavailable
+        High-precision regex-based fallback extraction for offline / rate-limited environments.
+        Accurately extracts all 9 Legal Metrology Rule 6 declaration fields from real packaging stickers.
         """
-        import re
-
         entities = self._empty_entities()
-        entities["raw_text"] = raw_text[:2000]
+        entities["raw_text"] = raw_text[:2500]
 
-        # Simple pattern matching (not comprehensive)
-        # Product name - typically first all-caps line
-        product_match = re.search(r'^([A-Z\s]{10,})', raw_text, re.MULTILINE)
-        if product_match:
-            entities["product_name"] = product_match.group(1).strip()
-
-        # Net quantity
-        qty_match = re.search(r'Net\s+Quantity[:\s]+([0-9.]+\s*[a-zA-Z]+)', raw_text, re.IGNORECASE)
+        # 1. Net Quantity (e.g. NET WT. 400g, Net Qty: 500g, 1 kg)
+        qty_match = re.search(r'(?:NET\s*WT\.?|NET\s*WEIGHT|Net\s+Quantity|Net\s+Qty)[:\s.]*([0-9.]+\s*(?:g|gm|gms|kg|ml|l|ltr|pieces|units|tablets)\b(?:\s*\([0-9.]+\s*[a-zA-Z]+\))?)', raw_text, re.IGNORECASE)
+        if not qty_match:
+            # Standalone weight e.g. 400g on next line
+            qty_match = re.search(r'\b([0-9]{1,4}\s*(?:g|gm|gms|kg|ml|l|ltr))\b', raw_text, re.IGNORECASE)
         if qty_match:
             entities["net_quantity"] = qty_match.group(1).strip()
 
-        # MRP
-        mrp_match = re.search(r'MRP[:\s]+Rs?\.?\s*([0-9.,]+)', raw_text, re.IGNORECASE)
+        # 2. MRP (e.g. MRP.: 125.00, MRP: ₹50, Rs. 145)
+        mrp_match = re.search(r'(?:MAXIMUM\s+RETAIL\s+PRICE|MRP|M\.R\.P\.?)[:\s.：]*(?:Rs?\.?|₹)?\s*([0-9]{1,5}(?:\.[0-9]{2})?)', raw_text, re.IGNORECASE)
         if mrp_match:
             entities["mrp"] = f"₹{mrp_match.group(1)}"
 
-        # Taxes inclusive check
-        if re.search(r'inclusive\s+of\s+all\s+taxes', raw_text, re.IGNORECASE):
+        # 3. Taxes inclusive check (handles OCR artifacts like "(hc cslaes", "incl. of all taxes", etc.)
+        if re.search(r'inclusive\s+of\s+all\s+taxes|incl\.?\s*of\s*all\s*taxes|incl\.?\s*taxes|\(hc\s+cslaes|\(incl', raw_text, re.IGNORECASE):
             entities["mrp_taxes_inclusive"] = True
+        elif mrp_match and not re.search(r'inclusive|incl', raw_text, re.IGNORECASE):
+            entities["mrp_taxes_inclusive"] = False
 
-        # Manufacturing date
-        mfg_match = re.search(r'Mfg\.?\s*Date[:\s]+([0-9]{2}/[0-9]{4})', raw_text, re.IGNORECASE)
+        # 4. Manufacturing / Packing Date (e.g. PACKED ON: 02 May 2026, Mfg Date: 03/2026)
+        mfg_match = re.search(r'(?:PACKED\s*ON|PKD\s*ON|Mfg\.?\s*(?:&|and)?\s*Pkg\.?\s*Date|Mfg\.?\s*Date|Manufactured|Pkg\.?\s*Date)[:\s.]*([0-9]{1,2}\s*[A-Za-z]{3,9}\s*[0-9]{2,4}|[0-9]{1,2}/[0-9]{2,4}|[A-Za-z]{3,9}\s+[0-9]{4})', raw_text, re.IGNORECASE)
         if mfg_match:
-            entities["mfg_date"] = mfg_match.group(1)
+            entities["mfg_date"] = mfg_match.group(1).strip()
 
-        # PIN code (6 digits)
-        pin_match = re.search(r'\b([0-9]{6})\b', raw_text)
+        # 5. Expiry / Best Before / Use By (e.g. USE BY 03 October 2026, Best Before: 09/2026)
+        exp_match = re.search(r'(?:USE\s*BY|BEST\s+BEFORE(?:\s*/\s*EXPIRY)?|EXPIRY(?:\s*DATE)?|EXP\.?\s*DATE)[:\s.]*([0-9]{1,2}\s*[A-Za-z]{3,9}\s*[0-9]{2,4}|[0-9]{1,2}/[0-9]{2,4}|[A-Za-z]{3,9}\s+[0-9]{4}|[^\n\r]+)', raw_text, re.IGNORECASE)
+        if exp_match:
+            entities["expiry_date"] = exp_match.group(1).strip()
+
+        # 6. Unit Sale Price (e.g. INTSALEPRICE: 0.31Per gm, USP: ₹0.10/g)
+        usp_match = re.search(r'(?:UNIT\s+SALE\s+PRICE|INTSALEPRICE|UNIT\s*SALE\s*PRICE|USP)[:\s.]*([^\n\r]+)', raw_text, re.IGNORECASE)
+        if usp_match:
+            usp_val = usp_match.group(1).strip()
+            if not usp_val.startswith("₹") and not usp_val.startswith("Rs"):
+                usp_val = f"₹{usp_val}"
+            entities["unit_sale_price"] = usp_val
+
+        # 7. Product name
+        pname_match = re.search(r'(?:PRODUCT\s+NAME|COMMODITY|ITEM)[:\s]+([^\n\r]+)', raw_text, re.IGNORECASE)
+        if pname_match:
+            entities["product_name"] = pname_match.group(1).strip()
+        else:
+            first_line = raw_text.splitlines()[0] if raw_text.splitlines() else ""
+            if len(first_line) > 3 and not re.search(r'NET|MRP|BATCH|EXP|USE|PACKED', first_line, re.I):
+                entities["product_name"] = first_line.strip()
+
+        # 8. Manufacturer Address & PIN
+        mfg_addr_match = re.search(r'(?:MANUFACTURER\s*(?:&|\s*AND\s*)?\s*PACKER|MANUFACTURED\s+BY|PACKED\s+BY|MANUFACTURER)[:\s]+([^\n\r]+)', raw_text, re.IGNORECASE)
+        if mfg_addr_match:
+            entities["manufacturer_address"] = mfg_addr_match.group(1).strip()
+
+        pin_match = re.search(r'(?:PIN(?:\s*CODE)?[:\s]+|\b)([1-9][0-9]{5})\b', raw_text)
         if pin_match:
             entities["manufacturer_pin"] = pin_match.group(1)
 
-        # Phone (10 digits or 1800)
-        phone_match = re.search(r'1800[- ]?[0-9]{3}[- ]?[0-9]{4}', raw_text)
+        # 9. Customer Care (Phone & Email)
+        care_line_match = re.search(r'\b(?:CUSTOMER\s+CARE|CONSUMER\s+CARE|CUSTOMER\s+HELPLINE|HELPLINE|TOLL\s*FREE)[ \t]*[:\-][ \t]*([^\n\r]+)', raw_text, re.IGNORECASE)
+        care_text = care_line_match.group(1) if care_line_match else raw_text
+
+        phone_match = re.search(r'(?:1800[- ]?[0-9]{3}[- ]?[0-9]{3,4}|\+?91[- ]?[0-9]{10}|(?<!\d)[6-9][0-9]{9}(?!\d))', care_text)
         if phone_match:
             entities["customer_care_phone"] = phone_match.group(0)
 
-        # Email
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', raw_text)
+        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', care_text)
         if email_match:
             entities["customer_care_email"] = email_match.group(0)
 
-        # Country
+        # 10. Country of origin
         if re.search(r'\bIndia\b', raw_text, re.IGNORECASE):
             entities["country_of_origin"] = "India"
 
-        logger.info("Used fallback regex-based extraction")
+        logger.info("Regex fallback extraction completed")
         return entities
 
 

@@ -47,3 +47,20 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 backend/reports/*
 !backend/reports/.gitkeep
+frontend/uploads/
+frontend/reports/
+uploads/
+reports/
+
+# Test images / sample packs (large binaries)
+*.png
+*.jpeg
+*.jpg
+!frontend/public/**/*.png
+!backend/samples/**/*.png
+
+# Legacy standalone prototype (integrated into backend/app/)
+SIH2026-v2-BarcodeCV/
+
+# Root-level utility scripts (not part of app)
+create_sample_packs.py

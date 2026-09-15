@@ -48,6 +48,18 @@ export default function Navbar() {
             </Link>
 
             <Link
+              to="/barcode"
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                isActive('/barcode') || location.pathname.startsWith('/barcode/')
+                  ? 'bg-slate-800 text-teal-400'
+                  : 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
+              }`}
+            >
+              <span>🔢</span>
+              <span>Barcode Lookup</span>
+            </Link>
+
+            <Link
               to="/dashboard"
               className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 isActive('/dashboard')

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import ComplianceCard from '../components/ComplianceCard';
+import MultiFactorVerificationCard from '../components/MultiFactorVerificationCard';
 import ViolationList from '../components/ViolationList';
 import DeclarationsTable from '../components/DeclarationsTable';
 
@@ -12,6 +13,7 @@ export default function Result() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const getImageUrl = (url) => {
     if (!url) return '';
@@ -31,6 +33,7 @@ export default function Result() {
     try {
       const response = await api.get(`/api/v1/scan/${scanId}`);
       setScanData(response.data);
+      setActiveImageIndex(0);
     } catch (err) {
       console.error('Fetch error:', err);
       setError(
@@ -97,33 +100,87 @@ export default function Result() {
     );
   }
 
+  // Determine images list (multi-surface or single primary)
+  const imageList = scanData?.image_urls && scanData.image_urls.length > 0
+    ? scanData.image_urls
+    : scanData?.image_url
+    ? [scanData.image_url]
+    : [];
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-8">
       {/* Header Breadcrumb */}
-      <div className="flex items-center space-x-2 text-sm text-slate-400">
-        <button
-          onClick={() => navigate('/')}
-          className="hover:text-teal-400 transition"
-        >
-          Scanner
-        </button>
-        <span>/</span>
-        <span className="text-slate-300 font-medium">Scan Result #{scanId}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2 text-sm text-slate-400">
+          <button
+            onClick={() => navigate('/')}
+            className="hover:text-teal-400 transition cursor-pointer"
+          >
+            Scanner
+          </button>
+          <span>/</span>
+          <span className="text-slate-300 font-medium">Scan Result #{scanId}</span>
+        </div>
+
+        {scanData?.barcode && (
+          <div className="flex items-center space-x-2 bg-slate-900 border border-cyan-500/40 px-3 py-1 rounded-full text-xs">
+            <span className="text-slate-400">GS1 EAN:</span>
+            <span className="font-mono text-cyan-300 font-bold">{scanData.barcode}</span>
+          </div>
+        )}
       </div>
 
-      {/* Product Image Thumbnail */}
-      {scanData?.image_url && (
-        <div className="flex justify-center">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 inline-block">
-            <img
-              src={getImageUrl(scanData.image_url)}
-              alt="Scanned product label"
-              className="max-w-full max-h-80 rounded-lg shadow-lg"
-            />
-            <p className="text-center text-xs text-slate-400 mt-3">
-              Original Label Image
-            </p>
+      {/* Multi-Surface Packaging Image Gallery */}
+      {imageList.length > 0 && (
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">📸</span>
+              <h3 className="text-sm sm:text-base font-bold text-slate-200">
+                Packaging Surface Photos ({imageList.length} Angle{imageList.length > 1 ? 's' : ''} Analyzed)
+              </h3>
+            </div>
+            {imageList.length > 1 && (
+              <span className="text-xs text-teal-400 bg-teal-950/80 px-2.5 py-1 rounded-full border border-teal-800/60 font-semibold">
+                Surface #{activeImageIndex + 1} of {imageList.length}
+              </span>
+            )}
           </div>
+
+          {/* Main Selected Image View */}
+          <div className="flex justify-center bg-slate-950 rounded-2xl p-4 border border-slate-800/80">
+            <img
+              src={getImageUrl(imageList[activeImageIndex])}
+              alt={`Packaging Surface ${activeImageIndex + 1}`}
+              className="max-h-96 object-contain rounded-xl shadow-2xl"
+            />
+          </div>
+
+          {/* Thumbnail Carousel for Multi-Angle Photos */}
+          {imageList.length > 1 && (
+            <div className="flex items-center space-x-3 overflow-x-auto pt-2 pb-1">
+              {imageList.map((url, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setActiveImageIndex(idx)}
+                  className={`relative flex-shrink-0 w-24 h-20 rounded-xl overflow-hidden border-2 transition cursor-pointer ${
+                    activeImageIndex === idx
+                      ? 'border-teal-400 scale-105 shadow-lg shadow-teal-950/60'
+                      : 'border-slate-800 opacity-60 hover:opacity-100 hover:border-slate-700'
+                  }`}
+                >
+                  <img
+                    src={getImageUrl(url)}
+                    alt={`Surface ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-1 right-1 bg-slate-900/90 text-teal-300 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded">
+                    #{idx + 1}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -133,6 +190,13 @@ export default function Result() {
         onDownloadPdf={handleDownloadPdf}
         isDownloading={isDownloading}
       />
+
+      {/* Multi-Factor Verification & 3-Way Cross-Analysis */}
+      {scanData?.multi_factor_verification && (
+        <MultiFactorVerificationCard
+          verificationData={scanData.multi_factor_verification}
+        />
+      )}
 
       {/* 9 Declarations Validation Table */}
       <DeclarationsTable
@@ -144,13 +208,13 @@ export default function Result() {
       <ViolationList violations={scanData?.violations || []} />
 
       {/* Raw OCR Text (Collapsible) */}
-      {scanData?.raw_ocr_text && (
+      {(scanData?.raw_ocr_text || scanData?.entities?.raw_text) && (
         <details className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
           <summary className="text-sm font-bold text-slate-300 cursor-pointer uppercase tracking-wider hover:text-teal-400 transition">
-            View Raw OCR Output ({scanData.raw_ocr_text.length} characters)
+            View Aggregated Multi-Surface OCR Output
           </summary>
           <pre className="mt-4 text-xs text-slate-400 font-mono bg-slate-950 p-4 rounded-lg border border-slate-800 overflow-x-auto whitespace-pre-wrap">
-            {scanData.raw_ocr_text}
+            {scanData.raw_ocr_text || scanData.entities?.raw_text}
           </pre>
         </details>
       )}
@@ -159,7 +223,7 @@ export default function Result() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-800">
         <button
           onClick={() => navigate('/')}
-          className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg transition flex items-center space-x-2"
+          className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg transition flex items-center space-x-2 cursor-pointer"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -168,7 +232,7 @@ export default function Result() {
         </button>
 
         <div className="text-xs text-slate-500">
-          <span>Powered by PaddleOCR + Groq AI LLaMA / Qwen</span>
+          <span>AI Legal Metrology Compliance Engine • RapidOCR + Groq LLaMA 3.1 70B</span>
         </div>
       </div>
     </div>
